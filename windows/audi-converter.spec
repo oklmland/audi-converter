@@ -4,14 +4,14 @@
 # (run from the repo root)
 #
 # Place ffmpeg.exe and fdkaac.exe in windows/tools/ before building.
-# They are bundled inside the dist folder. ffprobe is NOT needed —
+# They are bundled inside dist/audi-converter/. ffprobe is NOT needed —
 # audi_converter.py probes video info from `ffmpeg -i` stderr.
 import os
 
 block_cipher = None
 
-# Resolve paths relative to this spec file so the build works no matter what
-# the current directory is at invocation time.
+# Resolve paths relative to this spec file so the build works regardless of
+# the working directory at invocation time.
 SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
 REPO_ROOT = os.path.dirname(SPEC_DIR)
 
@@ -26,7 +26,22 @@ a = Analysis(
     pathex=[REPO_ROOT],
     binaries=binaries,
     datas=[],
-    hiddenimports=[],
+    # uvicorn does dynamic imports at startup; PyInstaller can't see them
+    # without help.
+    hiddenimports=[
+        "uvicorn.logging",
+        "uvicorn.loops",
+        "uvicorn.loops.auto",
+        "uvicorn.loops.asyncio",
+        "uvicorn.protocols",
+        "uvicorn.protocols.http",
+        "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.http.h11_impl",
+        "uvicorn.protocols.websockets",
+        "uvicorn.protocols.websockets.auto",
+        "uvicorn.lifespan",
+        "uvicorn.lifespan.on",
+    ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

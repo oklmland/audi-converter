@@ -1,7 +1,7 @@
 PREFIX ?= /usr
 DESTDIR ?=
 PKGNAME = audi-converter
-VERSION = 2.0.0
+VERSION = 2.1.0
 
 PYSITE = $(shell python3 -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
 

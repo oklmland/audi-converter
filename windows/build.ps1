@@ -32,9 +32,14 @@ if ($missing.Count -gt 0) {
     exit 1
 }
 
-Write-Host "==> Installing PyInstaller" -ForegroundColor Cyan
+Write-Host "==> Installing Python build dependencies" -ForegroundColor Cyan
 python -m pip install --upgrade pip
-python -m pip install --upgrade pyinstaller
+python -m pip install --upgrade `
+    fastapi `
+    "uvicorn[standard]" `
+    python-multipart `
+    pydantic `
+    pyinstaller
 
 # Clean previous build outputs.
 if (Test-Path "build")               { Remove-Item -Recurse -Force "build" }

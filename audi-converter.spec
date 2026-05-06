@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.0.0
+Version:        2.1.0
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -13,15 +13,22 @@ BuildRequires:  python3-devel
 BuildRequires:  make
 
 Requires:       python3
+Requires:       python3-fastapi
+Requires:       python3-uvicorn
+Requires:       python3-multipart
 Requires:       python3-tkinter
 Requires:       ffmpeg
 Recommends:     fdkaac
+Recommends:     zenity
 
 %description
-A small native desktop app (Tkinter) that re-encodes videos to the
-MPEG-4 ASP (Xvid) / AAC LC MP4 profile played by the Audi MMI MIB1
-head unit. Multi-file queue, live progress with fps / speed / ETA,
-per-file cancellation, automatic aspect-ratio handling.
+A small desktop app that re-encodes videos to the MPEG-4 ASP (Xvid) /
+AAC LC MP4 profile played by the Audi MMI MIB1 head unit. The web UI
+(FastAPI + SSE) is served on localhost; the user's default browser is
+opened automatically and a small Tkinter control window is shown so the
+app can be quit cleanly. Multi-file queue, drag-and-drop, live progress
+with fps/speed/ETA, per-file cancellation, automatic aspect-ratio
+handling.
 
 %prep
 %setup -q
@@ -39,18 +46,17 @@ per-file cancellation, automatic aspect-ratio handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
-* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.0.0-1
-- Rewrite as a native Tkinter desktop app. No more FastAPI / uvicorn /
-  pywebview / GTK + WebKit — just stdlib + Tkinter, runs identically on
-  Linux and Windows.
-- Drop ffprobe dependency: probe video info from "ffmpeg -i" stderr.
-  Cuts the Windows bundle size by ~100 MB.
-- Surface ffmpeg's stderr tail in the UI when it fails.
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.0-1
+- Bring back the v1.0.5 web UI (FastAPI + Tailwind + drag-and-drop +
+  SSE), but no longer try to embed it in a native window. The browser
+  opens on launch; a tiny Tk control window with the URL and a Quitter
+  button replaces the GTK4+WebKit / pywebview embedding.
+- Drop ffprobe usage: probe video info from `ffmpeg -i` stderr
+  (saves ~97 MB on the Windows bundle).
 
-* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.4-1
-- Look for bundled ffmpeg/ffprobe/fdkaac inside _MEIPASS as well —
-  PyInstaller 6.x one-folder layouts put bundled binaries under
-  _internal/, not next to the .exe.
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.0.0-1
+- Stripped-down Tkinter rewrite to escape the pywebview/pythonnet
+  Windows packaging mess.
 
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.0-1
 - Initial release: MPEG-4 ASP (Xvid) + 128k AAC via fdkaac (44.1 kHz)

@@ -1,7 +1,7 @@
 # Audi MMI MIB1 Converter
 
-Native desktop app that re-encodes videos to a profile the Audi MMI
-MIB1 (High Harman variant) head unit reliably plays from USB / SD:
+Desktop app that re-encodes videos to a profile the Audi MMI MIB1 (High
+Harman variant) head unit reliably plays from USB / SD:
 
 - Container: MP4, `+faststart`
 - Video: **MPEG-4 ASP (Xvid)**, yuv420p, **720×480**, 25 fps,
@@ -22,11 +22,13 @@ Aspect-ratio handling is automatic:
   with no black bars; DAR > 2.0 (cinematic 21:9 / 2.39:1) is
   **scale-and-padded** so the full frame is preserved.
 
-## Stack
+## How it looks
 
-Plain Python + Tkinter. No web server, no embedded browser, no
-PyQt / GTK / pywebview. The whole thing is one
-[`audi_converter.py`](audi_converter.py) file.
+The UI is served on `http://127.0.0.1:<port>/` (FastAPI + SSE +
+Tailwind, drag-and-drop, glass aesthetic). On launch your default
+browser opens automatically. A tiny native control window also pops up
+with the URL and a **Quitter** button — closing it stops the server
+cleanly without going through Task Manager.
 
 ## Download
 
@@ -42,10 +44,14 @@ Pre-built releases live on
 ## Run from source (Linux)
 
 ```bash
-sudo dnf install python3 python3-tkinter ffmpeg fdkaac
+sudo dnf install python3 python3-tkinter python3-fastapi \
+                 python3-uvicorn python3-multipart ffmpeg fdkaac
 make run
 # or: python3 audi_converter.py
 ```
+
+`--no-window` runs uvicorn in the foreground without opening the
+browser or the Tk control window — handy for debugging.
 
 ## Install locally (Linux)
 
@@ -81,7 +87,8 @@ To do it manually on a Windows box with Python 3.11+ :
 ## Usage
 
 Launch *Audi MMI MIB1 Converter* (from the app menu, or `audi-converter`
-in a terminal, or `audi-converter.exe` on Windows). A native window
-opens. Click *Ajouter des fichiers…*, pick the output folder, and
-watch them convert one at a time with live fps / speed / ETA. Output
-files land in `<output-dir>/<original>.mp4`.
+in a terminal, or `audi-converter.exe` on Windows). Your browser opens
+on the UI; drag video files in, pick an output folder, watch them
+convert one at a time with live fps / speed / ETA / size. Output files
+land in `<output-dir>/<original>.mp4`. Hit **Quitter** in the small
+control window when you're done.
