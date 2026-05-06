@@ -321,6 +321,8 @@ async def _run_video_encoding(job: Job, cmd: list[str]) -> tuple[int, str]:
     """Run an ffmpeg subprocess that encodes video, parsing progress.
 
     Returns (rc, error_msg). rc == -1 means the binary is missing.
+    On non-zero rc, error_msg holds the tail of ffmpeg's stderr — useful
+    when the failure is a crash with no diagnostic of our own.
     """
     try:
         proc = await asyncio.create_subprocess_exec(
@@ -333,6 +335,7 @@ async def _run_video_encoding(job: Job, cmd: list[str]) -> tuple[int, str]:
     job.proc = proc
     duration = float(job.info.get("duration") or 0.0)
     last_emit = 0.0
+    stderr_tail: list[str] = []
     assert proc.stderr is not None
     async for line in read_chunks(proc.stderr):
         if job.cancelled:
@@ -341,6 +344,9 @@ async def _run_video_encoding(job: Job, cmd: list[str]) -> tuple[int, str]:
             except ProcessLookupError:
                 pass
             break
+        stderr_tail.append(line)
+        if len(stderr_tail) > 80:
+            del stderr_tail[:-80]
         b = line.encode("utf-8", "replace")
         if duration <= 0:
             m = DURATION_RE.search(b)
@@ -369,6 +375,10 @@ async def _run_video_encoding(job: Job, cmd: list[str]) -> tuple[int, str]:
             last_emit = now
             await state.broadcast({"type": "progress", "id": job.id, **stats})
     rc = await proc.wait()
+    if rc != 0 and stderr_tail:
+        # Last few non-empty lines, joined onto one line for the UI.
+        last = [ln.strip() for ln in stderr_tail[-12:] if ln.strip()]
+        return rc, " | ".join(last[-6:])
     return rc, ""
 
 
@@ -578,7 +588,8 @@ async def _run_singlepass(job: Job, dst: Path) -> None:
         job.message = str(dst)
     else:
         job.status = "error"
-        job.message = f"ffmpeg a échoué (code {rc})"
+        detail = f": {err}" if err else ""
+        job.message = f"ffmpeg a échoué (code {rc}){detail}"
 
 
 async def _run_with_fdkaac(job: Job, dst: Path) -> None:
@@ -606,7 +617,8 @@ async def _run_with_fdkaac(job: Job, dst: Path) -> None:
         if rc != 0:
             audio_task.cancel()
             job.status = "error"
-            job.message = f"ffmpeg a échoué (code {rc})"
+            detail = f": {err}" if err else ""
+            job.message = f"ffmpeg a échoué (code {rc}){detail}"
             return
 
         audio_ok = await audio_task

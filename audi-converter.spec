@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        1.0.4
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        Web-based video converter for Audi MMI MIB1 head units
 
@@ -45,6 +45,10 @@ fps/speed/ETA, and per-file cancellation.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.5-1
+- Surface the tail of ffmpeg's stderr in the UI when it fails so users
+  see why instead of just an opaque exit code.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.4-1
 - Look for bundled ffmpeg/ffprobe/fdkaac inside _MEIPASS as well —
   PyInstaller 6.x one-folder layouts put bundled binaries under
