@@ -1,0 +1,60 @@
+name: Build Windows .exe
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download bundled tools (ffmpeg, ffprobe, fdkaac)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force windows\tools | Out-Null
+
+          Invoke-WebRequest `
+            -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" `
+            -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extract
+          $bin = (Get-ChildItem ffmpeg-extract -Directory | Select-Object -First 1).FullName
+          Copy-Item "$bin\bin\ffmpeg.exe"  windows\tools\
+          Copy-Item "$bin\bin\ffprobe.exe" windows\tools\
+
+          Invoke-WebRequest `
+            -Uri "https://www.rarewares.org/files/aac/fdkaac-1.0.5-x64.zip" `
+            -OutFile fdkaac.zip
+          Expand-Archive -Path fdkaac.zip -DestinationPath fdkaac-extract
+          Copy-Item "fdkaac-extract\fdkaac.exe" windows\tools\
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi "uvicorn[standard]" python-multipart pydantic pywebview pyinstaller
+
+      - name: Build with PyInstaller
+        run: pyinstaller windows/audi-converter.spec --noconfirm --clean
+
+      - name: Zip the dist folder
+        shell: pwsh
+        run: Compress-Archive -Path dist\audi-converter\* -DestinationPath audi-converter-windows.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: audi-converter-windows
+          path: audi-converter-windows.zip
+
+      - name: Attach to release on tag push
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: audi-converter-windows.zip

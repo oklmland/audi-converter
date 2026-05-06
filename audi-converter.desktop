@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Audi MMI MIB1 Converter
+Name[fr]=Convertisseur Audi MMI MIB1
+GenericName=Video Converter
+Comment=Convert videos for Audi MMI MIB1 head units
+Comment[fr]=Convertit des vidéos pour l'autoradio Audi MMI MIB1
+Exec=audi-converter
+Icon=audio-x-generic
+Terminal=false
+Categories=AudioVideo;Video;
+StartupNotify=true

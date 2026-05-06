@@ -1,0 +1,53 @@
+Name:           audi-converter
+Version:        1.0.0
+Release:        1%{?dist}
+Summary:        Web-based video converter for Audi MMI MIB1 head units
+
+License:        MIT
+URL:            https://example.invalid/audi-converter
+Source0:        %{name}-%{version}.tar.gz
+
+BuildArch:      noarch
+
+BuildRequires:  python3-devel
+BuildRequires:  make
+
+Requires:       python3
+Requires:       python3-fastapi
+Requires:       python3-uvicorn
+Requires:       python3-multipart
+Requires:       python3-gobject
+Requires:       gtk4
+Requires:       webkitgtk6.0
+Requires:       ffmpeg
+Recommends:     fdkaac
+Recommends:     zenity
+
+%description
+A small desktop app with a native GTK4 + WebKit window that re-encodes
+videos to the MPEG-4 ASP (Xvid) / AAC LC MP4 profile played by the Audi
+MMI MIB1 head unit. Supports drag-and-drop, a queue, live progress with
+fps/speed/ETA, and per-file cancellation.
+
+%prep
+%setup -q
+
+%build
+# Pure-Python, nothing to build.
+
+%install
+%make_install PREFIX=%{_prefix}
+
+%files
+%{_bindir}/audi-converter
+%{_datadir}/applications/audi-converter.desktop
+%{python3_sitelib}/audi_converter.py
+%{python3_sitelib}/__pycache__/audi_converter.*.pyc
+
+%changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.0-1
+- Switch from GTK4 to FastAPI + web UI on localhost.
+- Switch encoder to MPEG-4 ASP (Xvid) + strict 128k AAC via fdkaac
+  (44.1 kHz) for reliable playback on MIB1 High Harman.
+- Embed the web UI in a native GTK4 + WebKit window — no longer opens
+  the system browser.

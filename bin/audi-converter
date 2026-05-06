@@ -1,0 +1,4 @@
+#!/usr/bin/env python3
+from audi_converter import main
+import sys
+sys.exit(main())
