@@ -60,15 +60,23 @@ def hms_to_seconds(h: bytes, m: bytes, s: bytes) -> float:
 @functools.lru_cache(maxsize=None)
 def _tool(name: str) -> str:
     """Resolve a tool's path. Frozen builds (PyInstaller, Windows) prefer a
-    binary shipped next to the executable; otherwise fall back to PATH.
+    binary shipped inside the bundle; otherwise fall back to PATH.
     Returns the bare name when nothing is found, so spawn raises
     FileNotFoundError as before.
+
+    PyInstaller 6.x one-folder layouts put bundled binaries under
+    `_internal/` rather than next to the .exe, so we check both.
     """
     if getattr(sys, "frozen", False):
         ext = ".exe" if sys.platform == "win32" else ""
-        cand = Path(sys.executable).parent / f"{name}{ext}"
-        if cand.exists():
-            return str(cand)
+        candidates = []
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass) / f"{name}{ext}")
+        candidates.append(Path(sys.executable).parent / f"{name}{ext}")
+        for cand in candidates:
+            if cand.exists():
+                return str(cand)
     return shutil.which(name) or name
 
 
