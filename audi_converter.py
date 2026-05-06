@@ -28,9 +28,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile
 import uvicorn
 
 # ----- Output profile ----------------------------------------------------

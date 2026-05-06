@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.1.1
+Version:        2.1.2
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -46,6 +46,12 @@ handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.2-1
+- Fix v2.1.1 regression: `isinstance(value, fastapi.UploadFile)` is False
+  for the starlette.datastructures.UploadFile values that
+  request.form() returns, so all uploads were silently rejected with
+  no error. Switch the isinstance check to starlette's UploadFile.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.1-1
 - Fix silent file truncation on upload. Starlette 0.38+ defaults
   max_part_size to 1 MiB, so large videos were cut to 1 MB and ffmpeg
