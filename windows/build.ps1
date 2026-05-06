@@ -5,11 +5,9 @@
 #
 # Prerequisites:
 #   - Python 3.11+ (https://python.org)
-#   - Edge WebView2 Runtime (preinstalled on Win11; evergreen download for Win10)
-#   - The three bundled binaries placed in windows\tools\:
+#   - The two bundled binaries placed in windows\tools\:
 #       - ffmpeg.exe   from https://www.gyan.dev/ffmpeg/builds/  (essentials build)
-#       - ffprobe.exe  (same archive as ffmpeg)
-#       - fdkaac.exe   from https://github.com/nu774/fdkaac/releases
+#       - fdkaac.exe   from https://github.com/nu774/fdkaac/releases or rarewares
 #
 # Output:
 #   dist\audi-converter\audi-converter.exe  (+ all DLLs and bundled tools)
@@ -21,7 +19,7 @@ Set-Location (Resolve-Path "$PSScriptRoot\..")
 
 # Verify bundled tools are present.
 $missing = @()
-foreach ($tool in @("ffmpeg.exe", "ffprobe.exe", "fdkaac.exe")) {
+foreach ($tool in @("ffmpeg.exe", "fdkaac.exe")) {
     if (-not (Test-Path "windows\tools\$tool")) { $missing += $tool }
 }
 if ($missing.Count -gt 0) {
@@ -29,27 +27,19 @@ if ($missing.Count -gt 0) {
     foreach ($m in $missing) { Write-Host "  - $m" }
     Write-Host ""
     Write-Host "Download:"
-    Write-Host "  ffmpeg + ffprobe : https://www.gyan.dev/ffmpeg/builds/  (release essentials)"
-    Write-Host "  fdkaac           : https://github.com/nu774/fdkaac/releases"
+    Write-Host "  ffmpeg : https://www.gyan.dev/ffmpeg/builds/  (release-essentials, copy bin\ffmpeg.exe)"
+    Write-Host "  fdkaac : https://www.rarewares.org/aac-encoders.php  (Windows x64)"
     exit 1
 }
 
-# Install / refresh build deps.
-Write-Host "==> Installing build dependencies" -ForegroundColor Cyan
+Write-Host "==> Installing PyInstaller" -ForegroundColor Cyan
 python -m pip install --upgrade pip
-python -m pip install --upgrade `
-    fastapi `
-    "uvicorn[standard]" `
-    python-multipart `
-    pydantic `
-    pywebview `
-    pyinstaller
+python -m pip install --upgrade pyinstaller
 
 # Clean previous build outputs.
-if (Test-Path "build")             { Remove-Item -Recurse -Force "build" }
+if (Test-Path "build")               { Remove-Item -Recurse -Force "build" }
 if (Test-Path "dist\audi-converter") { Remove-Item -Recurse -Force "dist\audi-converter" }
 
-# Build.
 Write-Host ""
 Write-Host "==> Running PyInstaller" -ForegroundColor Cyan
 python -m PyInstaller windows\audi-converter.spec --noconfirm --clean

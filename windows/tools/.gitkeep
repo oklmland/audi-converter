@@ -1,5 +1,5 @@
-Place ffmpeg.exe, ffprobe.exe and fdkaac.exe in this folder before running
+Place ffmpeg.exe and fdkaac.exe in this folder before running
 windows\build.ps1.
 
-  ffmpeg + ffprobe : https://www.gyan.dev/ffmpeg/builds/  (release essentials)
-  fdkaac           : https://github.com/nu774/fdkaac/releases
+  ffmpeg : https://www.gyan.dev/ffmpeg/builds/  (release-essentials)
+  fdkaac : https://www.rarewares.org/aac-encoders.php  (Windows x64)
