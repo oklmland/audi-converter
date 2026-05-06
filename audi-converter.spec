@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        1.0.2
+Version:        1.0.3
 Release:        1%{?dist}
 Summary:        Web-based video converter for Audi MMI MIB1 head units
 
@@ -45,6 +45,12 @@ fps/speed/ETA, and per-file cancellation.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.3-1
+- Disable UPX in the Windows PyInstaller spec; UPX corrupts the bundled
+  .NET assembly Python.Runtime.dll, breaking pywebview on Windows.
+- Fall back to the system browser when pywebview can't initialise on
+  Windows, so the app stays usable regardless.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.2-1
 - Force pywebview's Edge WebView2 backend on Windows (the default
   WinForms backend's pythonnet wiring fails on stock Windows machines).

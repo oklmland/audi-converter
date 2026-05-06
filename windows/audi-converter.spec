@@ -73,7 +73,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,  # UPX compresses .NET assemblies and breaks Python.Runtime.dll
     console=False,  # GUI app — no console window
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -89,7 +89,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=False,  # UPX compresses .NET assemblies and breaks Python.Runtime.dll
     upx_exclude=[],
     name="audi-converter",
 )

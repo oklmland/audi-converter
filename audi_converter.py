@@ -1292,15 +1292,28 @@ def _run_native_window_gtk(url: str) -> int:
 
 
 def _run_native_window_pywebview(url: str) -> int:
-    """Open the web UI inside a pywebview window (Windows uses Edge WebView2)."""
-    import webview  # pywebview
-    webview.create_window("Audi MMI MIB1 Converter", url,
-                          width=1100, height=780)
-    # Force the Edge WebView2 backend. The default WinForms backend needs
-    # a working pythonnet/.NET Framework setup that PyInstaller bundles
-    # don't reliably ship.
-    webview.start(gui="edgechromium")
-    return 0
+    """Open the web UI inside a pywebview window (Edge WebView2 on Windows).
+
+    Falls back to the system browser if pywebview / pythonnet fail to
+    initialise — every Windows backend in pywebview goes through pythonnet,
+    and on stock machines that wiring sometimes refuses to load the bundled
+    Python.Runtime.dll. Better to keep the app usable than crash.
+    """
+    try:
+        import webview  # pywebview
+        webview.create_window("Audi MMI MIB1 Converter", url,
+                              width=1100, height=780)
+        webview.start(gui="edgechromium")
+        return 0
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(
+            f"pywebview failed ({exc}); falling back to the system browser.\n"
+        )
+        import webbrowser
+        webbrowser.open(url)
+        # Keep the process alive so the daemon-thread server keeps serving.
+        threading.Event().wait()
+        return 0
 
 
 def _run_native_window(url: str) -> int:
