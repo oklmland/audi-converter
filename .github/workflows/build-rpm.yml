@@ -27,7 +27,7 @@ jobs:
       - name: Stage RPM for upload
         run: |
           mkdir -p out
-          cp /root/rpmbuild/RPMS/noarch/*.rpm out/
+          cp "$HOME"/rpmbuild/RPMS/noarch/*.rpm out/
           ls -la out/
 
       - name: Upload build artifact
