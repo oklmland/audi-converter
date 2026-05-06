@@ -9,15 +9,20 @@ import os
 
 block_cipher = None
 
+# Resolve everything relative to this spec file so the build works no matter
+# what the working directory is at invocation time.
+SPEC_DIR = os.path.dirname(os.path.abspath(SPEC))
+REPO_ROOT = os.path.dirname(SPEC_DIR)
+
 binaries = []
 for tool in ("ffmpeg", "ffprobe", "fdkaac"):
-    p = os.path.join("windows", "tools", f"{tool}.exe")
+    p = os.path.join(SPEC_DIR, "tools", f"{tool}.exe")
     if os.path.exists(p):
         binaries.append((p, "."))
 
 a = Analysis(
-    ["audi_converter.py"],
-    pathex=["."],
+    [os.path.join(REPO_ROOT, "audi_converter.py")],
+    pathex=[REPO_ROOT],
     binaries=binaries,
     datas=[],
     hiddenimports=[
