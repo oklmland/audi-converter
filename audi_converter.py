@@ -713,24 +713,37 @@ async def api_events(request: Request) -> StreamingResponse:
 
 
 @app.post("/api/upload")
-async def api_upload(files: list[UploadFile] = File(default_factory=list)) -> dict:
-    new_ids = []
-    for up in files:
-        if not up.filename:
-            continue
-        target = state.upload_dir / f"{uuid.uuid4().hex}_{Path(up.filename).name}"
-        with target.open("wb") as fh:
-            while True:
-                chunk = await up.read(1024 * 1024)
-                if not chunk:
-                    break
-                fh.write(chunk)
-        size = target.stat().st_size
-        job = Job(src=target, src_name=up.filename, size=size, owns_src=True)
-        state.jobs.append(job)
-        new_ids.append(job.id)
-        await state.broadcast({"type": "added", "job": job.to_dict()})
-        asyncio.create_task(probe_and_emit(job))
+async def api_upload(request: Request) -> dict:
+    """Accept video uploads of any size.
+
+    Don't use FastAPI's `File()` declaration: it routes through
+    `Request.form()` with Starlette's default `max_part_size=1 MiB`,
+    which silently truncates anything bigger. We call `Request.form()`
+    ourselves with a 64 GiB ceiling so the moov atom of large videos
+    doesn't get sliced off.
+    """
+    form = await request.form(max_part_size=64 * 1024 ** 3)
+    new_ids: list[str] = []
+    try:
+        for _key, value in form.multi_items():
+            if not isinstance(value, UploadFile) or not value.filename:
+                continue
+            target = state.upload_dir / f"{uuid.uuid4().hex}_{Path(value.filename).name}"
+            with target.open("wb") as fh:
+                while True:
+                    chunk = await value.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+            size = target.stat().st_size
+            job = Job(src=target, src_name=value.filename, size=size,
+                      owns_src=True)
+            state.jobs.append(job)
+            new_ids.append(job.id)
+            await state.broadcast({"type": "added", "job": job.to_dict()})
+            asyncio.create_task(probe_and_emit(job))
+    finally:
+        await form.close()
     if state.work_event:
         state.work_event.set()
     return {"job_ids": new_ids}

@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.1.0
+Version:        2.1.1
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -46,6 +46,12 @@ handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.1-1
+- Fix silent file truncation on upload. Starlette 0.38+ defaults
+  max_part_size to 1 MiB, so large videos were cut to 1 MB and ffmpeg
+  rejected them ("moov atom not found"). Bypass FastAPI's File()
+  declaration and call request.form(max_part_size=64 GiB) directly.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.0-1
 - Bring back the v1.0.5 web UI (FastAPI + Tailwind + drag-and-drop +
   SSE), but no longer try to embed it in a native window. The browser
