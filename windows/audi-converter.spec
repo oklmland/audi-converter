@@ -6,6 +6,7 @@
 # Place ffmpeg.exe, ffprobe.exe and fdkaac.exe in windows/tools/ before
 # building. They are bundled next to audi-converter.exe in dist/.
 import os
+from PyInstaller.utils.hooks import collect_all
 
 block_cipher = None
 
@@ -20,11 +21,23 @@ for tool in ("ffmpeg", "ffprobe", "fdkaac"):
     if os.path.exists(p):
         binaries.append((p, "."))
 
+# pywebview, pythonnet and clr_loader ship lots of side-DLLs and data files
+# (Python.Runtime.dll, edgechromium glue, etc.) that PyInstaller's automatic
+# analysis misses — collect_all() pulls everything they declare.
+extra_datas = []
+extra_binaries = []
+extra_hiddenimports = []
+for pkg in ("webview", "pythonnet", "clr_loader"):
+    d, b, h = collect_all(pkg)
+    extra_datas += d
+    extra_binaries += b
+    extra_hiddenimports += h
+
 a = Analysis(
     [os.path.join(REPO_ROOT, "audi_converter.py")],
     pathex=[REPO_ROOT],
-    binaries=binaries,
-    datas=[],
+    binaries=binaries + extra_binaries,
+    datas=extra_datas,
     hiddenimports=[
         "uvicorn.logging",
         "uvicorn.loops",
@@ -38,7 +51,7 @@ a = Analysis(
         "uvicorn.protocols.websockets.auto",
         "uvicorn.lifespan",
         "uvicorn.lifespan.on",
-    ],
+    ] + extra_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

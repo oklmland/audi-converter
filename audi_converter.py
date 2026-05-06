@@ -1296,7 +1296,10 @@ def _run_native_window_pywebview(url: str) -> int:
     import webview  # pywebview
     webview.create_window("Audi MMI MIB1 Converter", url,
                           width=1100, height=780)
-    webview.start()
+    # Force the Edge WebView2 backend. The default WinForms backend needs
+    # a working pythonnet/.NET Framework setup that PyInstaller bundles
+    # don't reliably ship.
+    webview.start(gui="edgechromium")
     return 0
 
 

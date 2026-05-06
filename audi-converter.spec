@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        1.0.1
+Version:        1.0.2
 Release:        1%{?dist}
 Summary:        Web-based video converter for Audi MMI MIB1 head units
 
@@ -45,6 +45,12 @@ fps/speed/ETA, and per-file cancellation.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.2-1
+- Force pywebview's Edge WebView2 backend on Windows (the default
+  WinForms backend's pythonnet wiring fails on stock Windows machines).
+- PyInstaller spec now collects pywebview/pythonnet/clr_loader data
+  files so the bundled .exe ships every required DLL.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 1.0.1-1
 - Fix Windows .exe crash on startup (None stdout/stderr in --windowed
   PyInstaller builds was breaking uvicorn's logging config).
