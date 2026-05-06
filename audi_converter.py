@@ -1311,6 +1311,12 @@ def main() -> int:
         # PyInstaller / frozen builds need this before any subprocess use.
         import multiprocessing
         multiprocessing.freeze_support()
+        # `--windowed` PyInstaller builds set sys.stdout / sys.stderr to
+        # None. uvicorn's logging calls sys.stderr.isatty() and crashes
+        # before it ever serves a request. Patch in dummy sinks.
+        for attr in ("stdout", "stderr"):
+            if getattr(sys, attr) is None:
+                setattr(sys, attr, open(os.devnull, "w"))
 
     port = _free_port()
     url = f"http://127.0.0.1:{port}/"
