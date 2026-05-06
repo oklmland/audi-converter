@@ -146,19 +146,30 @@ def _native_audio_args() -> list[str]:
     ]
 
 
-def ffmpeg_cmd_xvid(src: Path, dst: Path, vf: str) -> list[str]:
+def _metadata_args(title: str, artist: str) -> list[str]:
+    """ffmpeg -metadata flags for MP4 iTunes-style title / artist atoms."""
+    args: list[str] = []
+    if title:
+        args += ["-metadata", f"title={title}"]
+    if artist:
+        args += ["-metadata", f"artist={artist}"]
+    return args
+
+
+def ffmpeg_cmd_xvid(src: Path, dst: Path, vf: str, meta: list[str]) -> list[str]:
     """Single-pass: Xvid video + native AAC audio, in MP4."""
     return [
         _tool("ffmpeg"), "-y", "-nostdin", "-i", str(src),
         *_xvid_video_args(vf),
         *_native_audio_args(),
+        *meta,
         "-movflags", "+faststart",
         str(dst),
     ]
 
 
 def ffmpeg_video_only_xvid(src: Path, dst: Path, vf: str) -> list[str]:
-    """Video-only Xvid for the fdkaac pipeline."""
+    """Video-only Xvid for the fdkaac pipeline. Metadata is added at mux time."""
     return [
         _tool("ffmpeg"), "-y", "-nostdin", "-i", str(src),
         *_xvid_video_args(vf),
@@ -171,6 +182,19 @@ def have_fdkaac() -> bool:
 
 
 # ----- State -------------------------------------------------------------
+
+def _parse_filename_metadata(name: str) -> tuple[str, str]:
+    """Best-effort split of "Artist - Title.ext" into (artist, title).
+
+    Falls back to ("", stem) when there's no " - " separator. Users can
+    correct via the per-file inputs in the UI before encoding.
+    """
+    stem = Path(name).stem
+    if " - " in stem:
+        artist, title = stem.split(" - ", 1)
+        return artist.strip(), title.strip()
+    return "", stem
+
 
 class Job:
     def __init__(self, src: Path, src_name: str, size: int, owns_src: bool):
@@ -187,6 +211,7 @@ class Job:
         self.proc: Optional[asyncio.subprocess.Process] = None
         self.cancelled = False
         self.message = ""
+        self.artist, self.title = _parse_filename_metadata(src_name)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -199,6 +224,8 @@ class Job:
             "info": self.info,
             "dst": str(self.dst) if self.dst else None,
             "message": self.message,
+            "title": self.title,
+            "artist": self.artist,
         }
 
 
@@ -410,12 +437,15 @@ async def _encode_audio_fdkaac(src: Path, dst_m4a: Path) -> bool:
                     pass
 
 
-async def _mux_av(vid: Path, aud: Path, dst: Path) -> bool:
+async def _mux_av(vid: Path, aud: Path, dst: Path,
+                  meta: list[str]) -> bool:
     try:
         proc = await asyncio.create_subprocess_exec(
             _tool("ffmpeg"), "-y", "-nostdin",
             "-i", str(vid), "-i", str(aud),
-            "-c", "copy", "-movflags", "+faststart",
+            "-c", "copy",
+            *meta,
+            "-movflags", "+faststart",
             str(dst),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
@@ -554,7 +584,10 @@ async def run_job(job: Job) -> None:
 async def _run_singlepass(job: Job, dst: Path) -> None:
     """Xvid + native AAC in one ffmpeg invocation. Used when fdkaac is missing."""
     vf = _build_video_filter(_job_effective_dar(job), _job_active_crop(job))
-    rc, err = await _run_video_encoding(job, ffmpeg_cmd_xvid(job.src, dst, vf))
+    meta = _metadata_args(job.title, job.artist)
+    rc, err = await _run_video_encoding(
+        job, ffmpeg_cmd_xvid(job.src, dst, vf, meta)
+    )
     if rc == -1:
         job.status = "error"
         job.message = err
@@ -614,7 +647,8 @@ async def _run_with_fdkaac(job: Job, dst: Path) -> None:
             job.status = "error"
             job.message = "fdkaac a échoué"
             return
-        if not await _mux_av(vid_tmp, aud_tmp, dst):
+        meta = _metadata_args(job.title, job.artist)
+        if not await _mux_av(vid_tmp, aud_tmp, dst, meta):
             job.status = "error"
             job.message = "Le mux final a échoué"
             return
@@ -664,6 +698,11 @@ app = FastAPI(lifespan=lifespan, title="Audi MMI MIB1 Converter")
 
 class OutputDirRequest(BaseModel):
     path: str
+
+
+class MetadataRequest(BaseModel):
+    title: Optional[str] = None
+    artist: Optional[str] = None
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -748,6 +787,22 @@ async def api_upload(request: Request) -> dict:
     if state.work_event:
         state.work_event.set()
     return {"job_ids": new_ids}
+
+
+@app.post("/api/metadata/{job_id}")
+async def api_metadata(job_id: str, req: MetadataRequest) -> dict:
+    for j in state.jobs:
+        if j.id == job_id:
+            if j.status != "pending":
+                raise HTTPException(400, "Le job est déjà lancé ou terminé")
+            if req.title is not None:
+                j.title = req.title.strip()
+            if req.artist is not None:
+                j.artist = req.artist.strip()
+            await state.broadcast({"type": "metadata", "id": j.id,
+                                   "title": j.title, "artist": j.artist})
+            return {"ok": True}
+    raise HTTPException(404)
 
 
 @app.post("/api/cancel/{job_id}")
@@ -1050,6 +1105,11 @@ function newCard(j) {
           <div class="status-text text-[11px] mono whitespace-nowrap"></div>
         </div>
         <div class="text-[11px] mono text-slate-400 mt-0.5 info"></div>
+        <div class="metadata hidden mt-2 grid grid-cols-2 gap-1.5">
+          <input class="title-input text-xs px-2 py-1 rounded-md bg-slate-900/60 border border-slate-700/50 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30" placeholder="Titre" autocomplete="off" spellcheck="false">
+          <input class="artist-input text-xs px-2 py-1 rounded-md bg-slate-900/60 border border-slate-700/50 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30" placeholder="Interprète" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="metadata-static hidden text-[11px] mono text-slate-400 mt-1"></div>
         <div class="bar-wrap hidden mt-2.5 h-1.5 bg-slate-800 rounded-full overflow-hidden">
           <div class="bar h-full rounded-full transition-[width] duration-200 ease-out" style="width:0%"></div>
         </div>
@@ -1062,6 +1122,30 @@ function newCard(j) {
   card.querySelector(".cancel-btn").onclick = () => {
     fetch(`/api/cancel/${j.id}`, { method: "POST" });
   };
+
+  // Debounced metadata sync — fires 400 ms after the last keystroke or on
+  // blur, whichever comes first.
+  const titleEl = card.querySelector(".title-input");
+  const artistEl = card.querySelector(".artist-input");
+  let metaTimer = null;
+  const sync = () => {
+    fetch(`/api/metadata/${j.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: titleEl.value,
+        artist: artistEl.value,
+      }),
+    });
+  };
+  const schedule = () => {
+    clearTimeout(metaTimer);
+    metaTimer = setTimeout(sync, 400);
+  };
+  for (const el of [titleEl, artistEl]) {
+    el.addEventListener("input", schedule);
+    el.addEventListener("blur", () => { clearTimeout(metaTimer); sync(); });
+  }
   return card;
 }
 
@@ -1083,6 +1167,24 @@ function renderJob(j) {
   pill.innerHTML = ICONS[st.icon];
   dom.querySelector(".name").textContent = j.src_name;
   dom.querySelector(".info").textContent = infoBits(j);
+
+  const titleEl = dom.querySelector(".title-input");
+  const artistEl = dom.querySelector(".artist-input");
+  const meta = dom.querySelector(".metadata");
+  const metaStatic = dom.querySelector(".metadata-static");
+  if (j.status === "pending") {
+    if (document.activeElement !== titleEl) titleEl.value = j.title || "";
+    if (document.activeElement !== artistEl) artistEl.value = j.artist || "";
+    meta.classList.remove("hidden");
+    metaStatic.classList.add("hidden");
+  } else {
+    meta.classList.add("hidden");
+    const bits = [];
+    if (j.title) bits.push(`♪ ${j.title}`);
+    if (j.artist) bits.push(`— ${j.artist}`);
+    metaStatic.textContent = bits.join("  ");
+    metaStatic.classList.toggle("hidden", bits.length === 0);
+  }
 
   const bar = dom.querySelector(".bar-wrap");
   const barInner = dom.querySelector(".bar");
@@ -1151,6 +1253,9 @@ function connect() {
     } else if (m.type === "info") {
       const d = jobs.get(m.id)?.data;
       if (d) { d.info = m.info; renderJob(d); }
+    } else if (m.type === "metadata") {
+      const d = jobs.get(m.id)?.data;
+      if (d) { d.title = m.title; d.artist = m.artist; renderJob(d); }
     } else if (m.type === "started") {
       const d = jobs.get(m.id)?.data;
       if (d) { d.status = "running"; d.progress = 0; renderJob(d); }

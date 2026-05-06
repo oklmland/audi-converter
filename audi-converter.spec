@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.1.2
+Version:        2.2.0
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -46,6 +46,12 @@ handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Thu May 07 2026 totorkmh <kemmeh.victor@gmail.com> - 2.2.0-1
+- Add per-job title / artist metadata. Auto-parsed from filenames
+  matching "Artist - Title.ext"; editable in the UI before encoding.
+  Written into the output MP4's iTunes-style atoms via ffmpeg
+  -metadata so head units can display them.
+
 * Wed May 06 2026 totorkmh <kemmeh.victor@gmail.com> - 2.1.2-1
 - Fix v2.1.1 regression: `isinstance(value, fastapi.UploadFile)` is False
   for the starlette.datastructures.UploadFile values that
