@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.2.0
+Version:        2.3.0
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -46,6 +46,13 @@ handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Thu May 07 2026 totorkmh <kemmeh.victor@gmail.com> - 2.3.0-1
+- Add "Tagger des fichiers existants" panel: scan a folder (e.g. an
+  SD card already populated), parse "Artist - Title.mp4" filenames, and
+  write the tags into each MP4 in place via ffmpeg -c copy (no
+  re-encoding — seconds per file). Files without the separator are
+  skipped.
+
 * Thu May 07 2026 totorkmh <kemmeh.victor@gmail.com> - 2.2.0-1
 - Add per-job title / artist metadata. Auto-parsed from filenames
   matching "Artist - Title.ext"; editable in the UI before encoding.

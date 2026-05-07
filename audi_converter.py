@@ -705,6 +705,10 @@ class MetadataRequest(BaseModel):
     artist: Optional[str] = None
 
 
+class TagFolderRequest(BaseModel):
+    path: str
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     return HTMLResponse(INDEX_HTML)
@@ -928,6 +932,93 @@ async def api_open_output() -> dict:
         raise HTTPException(500, str(exc))
 
 
+async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
+    """Rewrite an MP4's title/artist atoms without re-encoding.
+
+    Streams to a temp file in the same folder then atomically replaces the
+    original. Falls back to leaving the original untouched on any failure.
+    """
+    tmp = path.with_name(f".{uuid.uuid4().hex}.{path.name}")
+    meta: list[str] = []
+    if title:
+        meta += ["-metadata", f"title={title}"]
+    if artist:
+        meta += ["-metadata", f"artist={artist}"]
+    if not meta:
+        return False
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _tool("ffmpeg"), "-y", "-nostdin",
+            "-i", str(path),
+            "-c", "copy",
+            *meta,
+            "-movflags", "+faststart",
+            str(tmp),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        return False
+    rc = await proc.wait()
+    if rc != 0:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    try:
+        os.replace(str(tmp), str(path))  # atomic on the same filesystem
+    except OSError:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+    return True
+
+
+@app.post("/api/tag-folder")
+async def api_tag_folder(req: TagFolderRequest) -> dict:
+    """Walk a folder for .mp4 files, parse Artist/Title from filenames, and
+    write the tags into each file without re-encoding."""
+    folder = Path(req.path).expanduser()
+    if not folder.is_dir():
+        raise HTTPException(400, f"Dossier introuvable : {folder}")
+    files = sorted(p for p in folder.rglob("*.mp4") if p.is_file())
+    tagged = skipped = errors = 0
+    error_names: list[str] = []
+    for f in files:
+        # Only touch files whose name actually carries an "Artist - Title"
+        # marker, otherwise we'd write meaningless titles ("Notagsource")
+        # into every random MP4 in the folder.
+        if " - " not in f.stem:
+            skipped += 1
+            continue
+        artist, title = _parse_filename_metadata(f.name)
+        ok = await _retag_in_place(f, title, artist)
+        if ok:
+            tagged += 1
+        else:
+            errors += 1
+            error_names.append(f.name)
+    return {
+        "total": len(files),
+        "tagged": tagged,
+        "skipped": skipped,
+        "errors": errors,
+        "error_names": error_names[:10],
+    }
+
+
+@app.post("/api/pick-dir")
+async def api_pick_dir() -> dict:
+    """Generic folder picker — same dialog backends as /api/pick-output but
+    just returns the chosen path without mutating server state."""
+    picker = _pick_dir_windows if sys.platform == "win32" else _pick_dir_linux
+    path = await asyncio.to_thread(picker)
+    return {"path": path}
+
+
 # ----- HTML --------------------------------------------------------------
 
 INDEX_HTML = r"""<!DOCTYPE html>
@@ -1043,6 +1134,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <code class="block mt-1.5 mono px-2 py-1 rounded bg-slate-900/70 border border-slate-700 select-all">sudo dnf install fdkaac</code>
         Redémarre l'app après install.
       </div>
+    </div>
+
+    <div class="glass rounded-2xl p-4 mt-5">
+      <div class="flex items-center justify-between mb-2">
+        <label class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tagger des fichiers existants</label>
+      </div>
+      <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
+        Scan un dossier (ta carte SD par exemple), parse <span class="mono">Artist - Title.mp4</span> et écrit les tags dans chaque MP4 <span class="font-semibold">sans ré-encoder</span>. Quelques secondes par fichier.
+      </p>
+      <div class="flex gap-2">
+        <input id="tagdir" placeholder="/run/media/..." class="flex-1 mono text-sm bg-slate-900/70 border border-slate-700/60 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/40">
+        <button id="tagpick" class="px-3 py-2 text-sm rounded-lg bg-slate-800/70 hover:bg-slate-700 transition border border-slate-700/50">Parcourir…</button>
+        <button id="tagrun" class="px-4 py-2 text-sm rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition shadow-lg shadow-indigo-900/40 font-medium">Tagger</button>
+      </div>
+      <p id="taghint" class="text-[11px] mono text-slate-500 mt-2"></p>
     </div>
   </div>
 
@@ -1346,6 +1452,43 @@ $("#openout").onclick = (e) => {
 };
 $("#clearbtn").onclick = () => fetch("/api/clear", { method: "POST" });
 $("#cancelbtn").onclick = () => fetch("/api/cancel-all", { method: "POST" });
+
+$("#tagpick").onclick = async () => {
+  const r = await fetch("/api/pick-dir", { method: "POST" });
+  const j = await r.json();
+  if (j.path) $("#tagdir").value = j.path;
+};
+$("#tagrun").onclick = async () => {
+  const path = $("#tagdir").value.trim();
+  if (!path) {
+    $("#taghint").textContent = "Indique un dossier d'abord.";
+    return;
+  }
+  $("#tagrun").disabled = true;
+  $("#taghint").textContent = "Scan en cours… (peut prendre quelques secondes par fichier)";
+  try {
+    const r = await fetch("/api/tag-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      $("#taghint").textContent = "Erreur : " + (err.detail || r.status);
+      return;
+    }
+    const j = await r.json();
+    const parts = [
+      `${j.tagged} taggé${j.tagged > 1 ? "s" : ""}`,
+      `${j.skipped} ignoré${j.skipped > 1 ? "s" : ""} (pas de motif "Artist - Title")`,
+    ];
+    if (j.errors > 0) parts.push(`${j.errors} erreur${j.errors > 1 ? "s" : ""}`);
+    parts.push(`sur ${j.total} fichier${j.total > 1 ? "s" : ""} .mp4`);
+    $("#taghint").textContent = parts.join("  ·  ");
+  } finally {
+    $("#tagrun").disabled = false;
+  }
+};
 </script>
 </body>
 </html>
