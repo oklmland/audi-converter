@@ -932,13 +932,15 @@ async def api_open_output() -> dict:
         raise HTTPException(500, str(exc))
 
 
-async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
-    """Rewrite an MP4's title/artist atoms without re-encoding.
+async def _retag_copy(src: Path, dst: Path,
+                      title: str, artist: str) -> bool:
+    """Write a tag-only copy of `src` to `dst` without re-encoding.
 
-    Streams to a temp file in the same folder then atomically replaces the
-    original. Falls back to leaving the original untouched on any failure.
+    Originals are never touched — if the destination disk is full, the FS
+    glitches, or ffmpeg trips on a weird input, the source survives. This
+    is the safe replacement for the previous in-place rewrite which
+    occasionally corrupted files on FAT32 SD cards.
     """
-    tmp = path.with_name(f".{uuid.uuid4().hex}.{path.name}")
     meta: list[str] = []
     if title:
         meta += ["-metadata", f"title={title}"]
@@ -947,13 +949,17 @@ async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
     if not meta:
         return False
     try:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    try:
         proc = await asyncio.create_subprocess_exec(
             _tool("ffmpeg"), "-y", "-nostdin",
-            "-i", str(path),
+            "-i", str(src),
             "-c", "copy",
             *meta,
             "-movflags", "+faststart",
-            str(tmp),
+            str(dst),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
@@ -962,17 +968,18 @@ async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
     rc = await proc.wait()
     if rc != 0:
         try:
-            tmp.unlink(missing_ok=True)
+            dst.unlink(missing_ok=True)
         except OSError:
             pass
         return False
+    # Sanity-check: written file must exist and be at least 80 % of the
+    # source's size (tag rewrite reuses every byte of the streams, so we
+    # should be very close to the original).
     try:
-        os.replace(str(tmp), str(path))  # atomic on the same filesystem
+        if not dst.exists() or dst.stat().st_size < src.stat().st_size * 0.8:
+            dst.unlink(missing_ok=True)
+            return False
     except OSError:
-        try:
-            tmp.unlink(missing_ok=True)
-        except OSError:
-            pass
         return False
     return True
 
@@ -980,7 +987,7 @@ async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
 @app.post("/api/tag-folder")
 async def api_tag_folder(req: TagFolderRequest) -> dict:
     """Walk a folder for .mp4 files, parse Artist/Title from filenames, and
-    write the tags into each file without re-encoding.
+    write tagged copies under `<folder>/_tagged/` (originals untouched).
 
     Progress is broadcast on the SSE channel as `tag_start` / `tag_progress`
     / `tag_done` events so the UI can show a live progress bar.
@@ -988,22 +995,26 @@ async def api_tag_folder(req: TagFolderRequest) -> dict:
     folder = Path(req.path).expanduser()
     if not folder.is_dir():
         raise HTTPException(400, f"Dossier introuvable : {folder}")
-    files = sorted(p for p in folder.rglob("*.mp4") if p.is_file())
+    out_dir = folder / "_tagged"
+    files = sorted(
+        p for p in folder.rglob("*.mp4")
+        if p.is_file() and out_dir not in p.parents
+    )
     total = len(files)
-    await state.broadcast({"type": "tag_start", "total": total})
+    await state.broadcast({"type": "tag_start", "total": total,
+                           "out_dir": str(out_dir)})
     tagged = skipped = errors = 0
     error_names: list[str] = []
     for i, f in enumerate(files, start=1):
         await state.broadcast({"type": "tag_progress",
                                "i": i, "total": total, "name": f.name})
-        # Only touch files whose name actually carries an "Artist - Title"
-        # marker, otherwise we'd write meaningless titles ("Notagsource")
-        # into every random MP4 in the folder.
         if " - " not in f.stem:
             skipped += 1
             continue
         artist, title = _parse_filename_metadata(f.name)
-        ok = await _retag_in_place(f, title, artist)
+        rel = f.relative_to(folder)
+        dst = out_dir / rel
+        ok = await _retag_copy(f, dst, title, artist)
         if ok:
             tagged += 1
         else:
@@ -1015,6 +1026,7 @@ async def api_tag_folder(req: TagFolderRequest) -> dict:
         "skipped": skipped,
         "errors": errors,
         "error_names": error_names[:10],
+        "out_dir": str(out_dir),
     }
     await state.broadcast({"type": "tag_done", **result})
     return result
@@ -1151,7 +1163,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <label class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Tagger des fichiers existants</label>
       </div>
       <p class="text-[11px] text-slate-400 mb-3 leading-relaxed">
-        Scan un dossier (ta carte SD par exemple), parse <span class="mono">Artist - Title.mp4</span> et écrit les tags dans chaque MP4 <span class="font-semibold">sans ré-encoder</span>. Quelques secondes par fichier.
+        Scan un dossier (ta carte SD par exemple), parse <span class="mono">Artist - Title.mp4</span> et écrit des <span class="font-semibold">copies taggées</span> dans <span class="mono">&lt;dossier&gt;/_tagged/</span>. Pas de ré-encodage (quelques secondes par fichier), originaux jamais modifiés.
       </p>
       <div class="flex gap-2">
         <input id="tagdir" placeholder="/run/media/..." class="flex-1 mono text-sm bg-slate-900/70 border border-slate-700/60 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/40">
@@ -1389,11 +1401,11 @@ function connect() {
       $("#tagbar").style.width = "100%";
       setTimeout(() => $("#tagbar-wrap").classList.add("hidden"), 800);
       const parts = [
-        `${m.tagged} taggé${m.tagged > 1 ? "s" : ""}`,
+        `${m.tagged} copié${m.tagged > 1 ? "s" : ""} avec tags`,
         `${m.skipped} ignoré${m.skipped > 1 ? "s" : ""} (pas de motif "Artist - Title")`,
       ];
       if (m.errors > 0) parts.push(`${m.errors} erreur${m.errors > 1 ? "s" : ""}`);
-      parts.push(`sur ${m.total} fichier${m.total > 1 ? "s" : ""} .mp4`);
+      parts.push(`→ ${m.out_dir}`);
       $("#taghint").textContent = parts.join("  ·  ");
     } else if (m.type === "started") {
       const d = jobs.get(m.id)?.data;

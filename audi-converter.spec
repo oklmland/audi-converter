@@ -1,5 +1,5 @@
 Name:           audi-converter
-Version:        2.3.1
+Version:        2.3.2
 Release:        1%{?dist}
 Summary:        Video converter for the Audi MMI MIB1 head unit
 
@@ -46,6 +46,17 @@ handling.
 %{python3_sitelib}/__pycache__/audi_converter.*.pyc
 
 %changelog
+* Thu May 07 2026 totorkmh <kemmeh.victor@gmail.com> - 2.3.2-1
+- ★ Stop rewriting tagged files in place. v2.3.0 / v2.3.1 corrupted
+  files on a user's FAT32 SD card because the in-place
+  ffmpeg-then-os.replace dance turned out not to be safe enough
+  against vfat / SD-card flakiness. The "Tagger des fichiers
+  existants" panel now writes copies under <folder>/_tagged/ and
+  never touches the originals.
+- Add a size sanity-check (tagged copy must be ≥ 80 % of source) so
+  truncated writes are detected and discarded instead of silently
+  declared a success.
+
 * Thu May 07 2026 totorkmh <kemmeh.victor@gmail.com> - 2.3.1-1
 - Live progress bar in the "Tagger des fichiers existants" panel.
   Backend broadcasts tag_start / tag_progress / tag_done SSE events as
