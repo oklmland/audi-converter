@@ -980,14 +980,22 @@ async def _retag_in_place(path: Path, title: str, artist: str) -> bool:
 @app.post("/api/tag-folder")
 async def api_tag_folder(req: TagFolderRequest) -> dict:
     """Walk a folder for .mp4 files, parse Artist/Title from filenames, and
-    write the tags into each file without re-encoding."""
+    write the tags into each file without re-encoding.
+
+    Progress is broadcast on the SSE channel as `tag_start` / `tag_progress`
+    / `tag_done` events so the UI can show a live progress bar.
+    """
     folder = Path(req.path).expanduser()
     if not folder.is_dir():
         raise HTTPException(400, f"Dossier introuvable : {folder}")
     files = sorted(p for p in folder.rglob("*.mp4") if p.is_file())
+    total = len(files)
+    await state.broadcast({"type": "tag_start", "total": total})
     tagged = skipped = errors = 0
     error_names: list[str] = []
-    for f in files:
+    for i, f in enumerate(files, start=1):
+        await state.broadcast({"type": "tag_progress",
+                               "i": i, "total": total, "name": f.name})
         # Only touch files whose name actually carries an "Artist - Title"
         # marker, otherwise we'd write meaningless titles ("Notagsource")
         # into every random MP4 in the folder.
@@ -1001,13 +1009,15 @@ async def api_tag_folder(req: TagFolderRequest) -> dict:
         else:
             errors += 1
             error_names.append(f.name)
-    return {
-        "total": len(files),
+    result = {
+        "total": total,
         "tagged": tagged,
         "skipped": skipped,
         "errors": errors,
         "error_names": error_names[:10],
     }
+    await state.broadcast({"type": "tag_done", **result})
+    return result
 
 
 @app.post("/api/pick-dir")
@@ -1147,6 +1157,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <input id="tagdir" placeholder="/run/media/..." class="flex-1 mono text-sm bg-slate-900/70 border border-slate-700/60 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/40">
         <button id="tagpick" class="px-3 py-2 text-sm rounded-lg bg-slate-800/70 hover:bg-slate-700 transition border border-slate-700/50">Parcourir…</button>
         <button id="tagrun" class="px-4 py-2 text-sm rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 transition shadow-lg shadow-indigo-900/40 font-medium">Tagger</button>
+      </div>
+      <div id="tagbar-wrap" class="hidden mt-3 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+        <div id="tagbar" class="h-full rounded-full transition-[width] duration-200 ease-out shimmer-bar" style="width:0%"></div>
       </div>
       <p id="taghint" class="text-[11px] mono text-slate-500 mt-2"></p>
     </div>
@@ -1362,6 +1375,26 @@ function connect() {
     } else if (m.type === "metadata") {
       const d = jobs.get(m.id)?.data;
       if (d) { d.title = m.title; d.artist = m.artist; renderJob(d); }
+    } else if (m.type === "tag_start") {
+      $("#tagbar-wrap").classList.remove("hidden");
+      $("#tagbar").style.width = "0%";
+      $("#taghint").textContent = m.total === 0
+        ? "Aucun .mp4 trouvé dans ce dossier."
+        : `0 / ${m.total} fichier${m.total > 1 ? "s" : ""}…`;
+    } else if (m.type === "tag_progress") {
+      const pct = m.total > 0 ? (m.i / m.total) * 100 : 0;
+      $("#tagbar").style.width = pct.toFixed(1) + "%";
+      $("#taghint").textContent = `${m.i} / ${m.total}  ·  ${m.name}`;
+    } else if (m.type === "tag_done") {
+      $("#tagbar").style.width = "100%";
+      setTimeout(() => $("#tagbar-wrap").classList.add("hidden"), 800);
+      const parts = [
+        `${m.tagged} taggé${m.tagged > 1 ? "s" : ""}`,
+        `${m.skipped} ignoré${m.skipped > 1 ? "s" : ""} (pas de motif "Artist - Title")`,
+      ];
+      if (m.errors > 0) parts.push(`${m.errors} erreur${m.errors > 1 ? "s" : ""}`);
+      parts.push(`sur ${m.total} fichier${m.total > 1 ? "s" : ""} .mp4`);
+      $("#taghint").textContent = parts.join("  ·  ");
     } else if (m.type === "started") {
       const d = jobs.get(m.id)?.data;
       if (d) { d.status = "running"; d.progress = 0; renderJob(d); }
@@ -1465,7 +1498,8 @@ $("#tagrun").onclick = async () => {
     return;
   }
   $("#tagrun").disabled = true;
-  $("#taghint").textContent = "Scan en cours… (peut prendre quelques secondes par fichier)";
+  // The actual progress + final summary land via SSE (tag_start /
+  // tag_progress / tag_done). We just kick off the request here.
   try {
     const r = await fetch("/api/tag-folder", {
       method: "POST",
@@ -1475,16 +1509,8 @@ $("#tagrun").onclick = async () => {
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       $("#taghint").textContent = "Erreur : " + (err.detail || r.status);
-      return;
+      $("#tagbar-wrap").classList.add("hidden");
     }
-    const j = await r.json();
-    const parts = [
-      `${j.tagged} taggé${j.tagged > 1 ? "s" : ""}`,
-      `${j.skipped} ignoré${j.skipped > 1 ? "s" : ""} (pas de motif "Artist - Title")`,
-    ];
-    if (j.errors > 0) parts.push(`${j.errors} erreur${j.errors > 1 ? "s" : ""}`);
-    parts.push(`sur ${j.total} fichier${j.total > 1 ? "s" : ""} .mp4`);
-    $("#taghint").textContent = parts.join("  ·  ");
   } finally {
     $("#tagrun").disabled = false;
   }
